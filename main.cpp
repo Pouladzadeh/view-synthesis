@@ -5,6 +5,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifndef SHOW_RESULT
+#define SHOW_RESULT
+#endif
+
 #ifndef LOGLEVEL
 //#define LOGLEVEL (ZONE_ERROR | ZONE_WARNING | ZONE_INFO | ZONE_TIME)
 #define LOGLEVEL (ZONE_ERROR | ZONE_TIME)
@@ -252,8 +256,10 @@ int main(int argc, char *argv[])
 
 *************************************************** */
 
-                cvShowImage("output", dst);
-                cvWaitKey(0);
+				if(SHOW_RESULT) {
+					cvShowImage("output", dst);
+					cvWaitKey(0);
+				}
 
 				BGR2YUV(dst, IY, IU, IV);
 
