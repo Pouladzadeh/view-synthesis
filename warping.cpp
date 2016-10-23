@@ -317,6 +317,7 @@ void init_synthesis(int width, int height) {
 IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, IplImage* depth_R, CvMat* inMat_L, CvMat* exMat_L, CvMat* inMat_R, CvMat* exMat_R, CvMat* inMat_V, CvMat* exMat_V, CvMat* inMat_L_cpy, CvMat* exMat_L_cpy, CvMat* inMat_R_cpy, CvMat* exMat_R_cpy, CvMat* inMat_V_cpy, CvMat* exMat_V_cpy, float Z_near_L, float Z_far_L, float Z_near_R, float Z_far_R, int flag)
 {
 
+    int64_t time = cv::getTickCount();
     int width = src_L->width;
     int height = src_R->height;
     init_synthesis(width, height);
@@ -556,7 +557,7 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     // Therefore we can save memory by not storing intermediate data to udepth2 and dst2
 
 #ifdef PTHREAD_V1
-    int64_t time = cv::getTickCount();
+    time = cv::getTickCount();
     pthread_t thread[NUM_THREADS];
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -592,7 +593,7 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0);
 #else
     // sequential version
-    int64_t time = cv::getTickCount();
+    time = cv::getTickCount();
     for(int j = 0; j < height; j++)
     {
         CvMat* m = cvCreateMat(3, 1, CV_64F);
@@ -739,6 +740,8 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
         cvReleaseMat(&H_VR[i]);
     }
 
+    timing_print("Total time: %f msec\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0);
     return dst;
 }
 
