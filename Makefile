@@ -12,7 +12,7 @@ LIBS =  -L/usr/local/lib $(LIBS_OpenCV)
 #LDFLAGS += $(LIBS)
 
 # or un-comment the following two lines
-EXTRA_FLAGS = -DPTHREAD_V1 -DNUM_THREADS=5
+EXTRA_FLAGS = -DPTHREAD_V1 -DNUM_THREADS=4
 CXXFLAGS += -g -O3 -std=c++11 -Wall $(shell pkg-config --cflags opencv) -I. $(EXTRA_FLAGS)
 LDFLAGS += $(shell pkg-config --libs --static opencv)
 
