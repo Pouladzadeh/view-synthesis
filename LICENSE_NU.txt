@@ -1,0 +1,19 @@
+            View Synthesis Software
+            Version 2.1, May 30th 2008
+          
+Nagoya University Tanimoto Laboratory provides the depth estimation software and view synthesis software as the reference software for the EE on 3DV of MPEG-FTV. 
+The software can be used only for the purpose of EE by the participants in the EE on 3DV of MPEG-FTV. 
+All rights of these softwares belong to Nagoya University Tanimoto Laboratory. 
+2008 Tanimoto Laboratory, All rights reserved. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+This program generates virtual viewpoint images by using 3D warping. 
+This program was developed by Yuji Mori and Kazuyoshi Suzuki 
+at Nagoya University, Japan. 
+
+Copyright 2008 Yuji MORI and Kazuyoshi SUZUKI at Nagoya University, Japan. 
+E-mail: suzuki-kz@tanimoto.nuee.nagoya-u.ac.jp
+
+This program is free software and you can modify it. 
+Tested under windows Visual C++ 2005 compiler.
+

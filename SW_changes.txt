@@ -1,0 +1,22 @@
+            View Synthesis Software
+            Version 2.3, June 27th 2008
+          
+This program generates virtual viewpoint images by using 3D warping. 
+This program was developed by Yuji Mori and Kazuyoshi Suzuki 
+at Nagoya University, Japan. 
+
+Copyright 2008 Yuji Mori and Kazuyoshi SUZUKI at Nagoya University, Japan. 
+E-mail: suzuki-kz@tanimoto.nuee.nagoya-u.ac.jp
+
+This program is free software for EE participants of MPEG-FTV and you can modify it. 
+Tested under windows Visual C++ 2005 compiler.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+VS2_2 -> VS2_3
+Date            : 27th June, 2008
+Changes         :
+- Z_near and Z_far values of left and right views are assigned independently.
+- In warping.cpp file, cvAddWeighted(dst, alpha, dst2, 1-alpha, 1, dst2) was replaced with cvAddWeighted(dst, 1-alpha, dst2, alpha, 0, dst2).
+- In warping.cpp file, camera name searching method was modified as follows. 
+(p=strstr(s1, s2)) == NULL -> (p=strstr(s1, s2)) == NULL || (strlen(s1) != strlen(s2))
+param.close() and param.open(filename) were added. 
