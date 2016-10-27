@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <opencv2/core/core.hpp>
 #ifndef SHOW_RESULT
 #define SHOW_RESULT
 #endif
@@ -189,7 +190,10 @@ int main(int argc, char *argv[])
 			error_print("Can't open %s.\n", name_out);
 			exit (1);
 		}
+			float total_t =0;
+			int count =1;
 			for (n = 0; n < num_frame; n++) {
+				int64_t time = cv::getTickCount();
 
 				info_print("frame number = %d \n", n);
 
@@ -284,6 +288,14 @@ int main(int argc, char *argv[])
 				info_print("Counter = %d \n", n);
 				putchar('\n');
 
+				total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+
+				timing_print("Frame Time  %f msec, ave %f over %d frames\n",
+						(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+						total_t/count,
+						count);
+
+				count++;
 			} // for n
 
 		cvReleaseImage(&dst);

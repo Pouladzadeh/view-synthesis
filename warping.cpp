@@ -22,8 +22,113 @@ IplImage* udepth_right;
 CvMat* homog_LV[256];
 CvMat* homog_RV[256];
 
+void* calcVirtDepth_thread(void* _tid);
+void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage* depth_R,
+			CvMat** H_LV, CvMat** H_RV, int width, int height)
+{
+    /*****  udepth loop 1 *****/
+    // update udepth and udepth2 values based on corresponding left/right depth
+    // It scans all depth values of left image, looks up corresponding H_lv matrix and
+    // update the projected location in udepth
+    //
+    // It scans all depth values of right image, looks up corresponding H_rv matrix and
+    // update the projected location in udepth2
+    // TODO: We may optimize the follwoing loop by making average on the fly.
+    // Therefore we can save memory by not storing intermediate data to udepth2 and dst2
+    int64_t time;
+    static float total_t = 0;
+    static int count = 1;
+#ifdef PTHREAD_V1
+    time = cv::getTickCount();
+    pthread_t thread[NUM_THREADS];
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    long t;
+    void *status;
+    int rc;
+    for(t=0; t<NUM_THREADS; t++) {
+        info_print("Main: creating thread %ld\n", t);
+        rc = pthread_create(&thread[t], &attr, calcVirtDepth_thread, (void *)t);
+        if (rc) {
+            error_print("return code from pthread_create() is %d\n", rc);
+            exit(-1);
+        }
+    }
+
+    /* Free attribute and wait for the other threads */
+    pthread_attr_destroy(&attr);
+    for(t=0; t<NUM_THREADS; t++) {
+        rc = pthread_join(thread[t], &status);
+        if (rc) {
+            error_print("return code from pthread_join() is %d\n", rc);
+            exit(-1);
+        }
+        info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
+    }
+
+    //(*depth_V)->imageData = (char*)udepth_left->imageData;
+    //(*depth_V2)->imageData = (char*)udepth_right->imageData;
+    udepth = (uchar*)udepth_left->imageData;
+    udepth2 = (uchar*)udepth_right->imageData;
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+
+    timing_print("Udepth loop1 took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+
+    count++;
+#else
+    // sequential version
+    time = cv::getTickCount();
+    //uchar* udepth = (uchar*)udepth_left->imageData;
+    //uchar* udepth2 = (uchar*)udepth_right->imageData;
+    for(int j = 0; j < height; j++)
+    {
+        CvMat* m = cvCreateMat(3, 1, CV_64F);
+        CvMat* mv = cvCreateMat(3, 1, CV_64F);
+        for(int i = 0; i < width; i++)
+        {
+            int pt = i + j * width;
+            cvmSet(m, 0, 0, i);
+            cvmSet(m, 1, 0, j);
+            cvmSet(m, 2, 0, 1);
+            uchar val = (uchar)depth_L->imageData[pt];
+            cvmMul(H_LV[val], m, mv);
+            int u = mv->data.db[0] / mv->data.db[2];
+            int v = mv->data.db[1] / mv->data.db[2];
+            u = abs(u) % width; // boundary check
+            v = abs(v) % height;
+            int ptv = u + v * width;
+            udepth[ptv] = (udepth[ptv] > val) ? udepth[ptv] : val;
+
+            val = (uchar)depth_R->imageData[pt];
+            cvmMul(H_RV[val], m, mv);
+            u = mv->data.db[0] / mv->data.db[2];
+            v = mv->data.db[1] / mv->data.db[2];
+            u = abs(u) % width;
+            v = abs(v) % height;
+            ptv = u + v * width;
+            udepth2[ptv] = (udepth2[ptv] > val) ? udepth2[ptv] : val;
+        }
+        cvReleaseMat(&m);
+        cvReleaseMat(&mv);
+    }
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+    timing_print("Udepth loop1 took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+    count++;
+#endif
+
+    /******************************************************/
+
+
+}
 // compute virtual depth kernel
-void* calcVirtDepth(void* _tid) {
+void* calcVirtDepth_thread(void* _tid) {
 
     int i, j;
     long tid = (long)_tid;
@@ -316,7 +421,8 @@ void init_synthesis(int width, int height) {
 
 IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, IplImage* depth_R, CvMat* inMat_L, CvMat* exMat_L, CvMat* inMat_R, CvMat* exMat_R, CvMat* inMat_V, CvMat* exMat_V, CvMat* inMat_L_cpy, CvMat* exMat_L_cpy, CvMat* inMat_R_cpy, CvMat* exMat_R_cpy, CvMat* inMat_V_cpy, CvMat* exMat_V_cpy, float Z_near_L, float Z_far_L, float Z_near_R, float Z_far_R, int flag)
 {
-
+    static float total_t = 0;
+    static int count = 1;
     int64_t time = cv::getTickCount();
     int width = src_L->width;
     int height = src_R->height;
@@ -545,92 +651,7 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
         udepth2[ptv] = 0;
     }
 
-
-    /*****  udepth loop 1 *****/
-    // update udepth and udepth2 values based on corresponding left/right depth
-    // It scans all depth values of left image, looks up corresponding H_lv matrix and
-    // update the projected location in udepth
-    //
-    // It scans all depth values of right image, looks up corresponding H_rv matrix and
-    // update the projected location in udepth2
-    // TODO: We may optimize the follwoing loop by making average on the fly.
-    // Therefore we can save memory by not storing intermediate data to udepth2 and dst2
-
-#ifdef PTHREAD_V1
-    time = cv::getTickCount();
-    pthread_t thread[NUM_THREADS];
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    long t;
-    void *status;
-    int rc;
-    for(t=0; t<NUM_THREADS; t++) {
-        info_print("Main: creating thread %ld\n", t);
-        rc = pthread_create(&thread[t], &attr, calcVirtDepth, (void *)t);
-        if (rc) {
-            error_print("return code from pthread_create() is %d\n", rc);
-            exit(-1);
-        }
-    }
-
-    /* Free attribute and wait for the other threads */
-    pthread_attr_destroy(&attr);
-    for(t=0; t<NUM_THREADS; t++) {
-        rc = pthread_join(thread[t], &status);
-        if (rc) {
-            error_print("return code from pthread_join() is %d\n", rc);
-            exit(-1);
-        }
-        info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
-    }
-
-    depth_V->imageData = (char*)udepth_left->imageData;
-    depth_V2->imageData = (char*)udepth_right->imageData;
-    udepth = (uchar*)udepth_left->imageData;
-    udepth2 = (uchar*)udepth_right->imageData;
-    timing_print("Udepth loop1 took %f msec\n",
-                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0);
-#else
-    // sequential version
-    time = cv::getTickCount();
-    for(int j = 0; j < height; j++)
-    {
-        CvMat* m = cvCreateMat(3, 1, CV_64F);
-        CvMat* mv = cvCreateMat(3, 1, CV_64F);
-        for(int i = 0; i < width; i++)
-        {
-            int pt = i + j * width;
-            cvmSet(m, 0, 0, i);
-            cvmSet(m, 1, 0, j);
-            cvmSet(m, 2, 0, 1);
-            uchar val = (uchar)depth_L->imageData[pt];
-            cvmMul(H_LV[val], m, mv);
-            int u = mv->data.db[0] / mv->data.db[2];
-            int v = mv->data.db[1] / mv->data.db[2];
-            u = abs(u) % width; // boundary check
-            v = abs(v) % height;
-            int ptv = u + v * width;
-            udepth[ptv] = (udepth[ptv] > val) ? udepth[ptv] : val;
-
-            val = (uchar)depth_R->imageData[pt];
-            cvmMul(H_RV[val], m, mv);
-            u = mv->data.db[0] / mv->data.db[2];
-            v = mv->data.db[1] / mv->data.db[2];
-            u = abs(u) % width;
-            v = abs(v) % height;
-            ptv = u + v * width;
-            udepth2[ptv] = (udepth2[ptv] > val) ? udepth2[ptv] : val;
-        }
-        cvReleaseMat(&m);
-        cvReleaseMat(&mv);
-    }
-    timing_print("Udepth loop1 took %f msec\n",
-                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0);
-#endif
-
-    /******************************************************/
-
+    calcVirtualDepth(udepth, udepth2, depth_L, depth_R, H_LV, H_RV, width, height);
     int sigma_d = 20;
     int sigma_c = 50;
 
@@ -739,9 +760,14 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
         cvReleaseMat(&H_VL[i]);
         cvReleaseMat(&H_VR[i]);
     }
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
-    timing_print("Total time: %f msec\n",
-                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0);
+    timing_print("viewsynthesis took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+
+    count++;
     return dst;
 }
 
