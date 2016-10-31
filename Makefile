@@ -4,7 +4,6 @@ BUILD_DIR = $(shell pwd)/build
 CXX = g++
 
 INCLUDE_OpenCV = -I/usr/local/include/opencv
-OpenCV_DIR = -L/hamidb/software/opencv/build
 LIBS_OpenCV = $(OpenCV_DIR)/lib -lopencv_calib3d -lopencv_core -lopencv_features2d -lopencv_flann -lopencv_highgui -lopencv_imgcodecs -lopencv_imgproc -lopencv_xfeatures2d
 LIBS =  -L/usr/local/lib -lpthread $(LIBS_OpenCV)
 
