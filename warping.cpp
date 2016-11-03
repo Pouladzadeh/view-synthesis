@@ -19,9 +19,18 @@ IplImage* depth_right;
 IplImage* depth_left;
 IplImage* udepth_left;
 IplImage* udepth_right;
+
+IplImage* src_left_g;
+IplImage* src_right_g;
+IplImage* dst_left_g;
+IplImage* dst_right_g;
+
 CvMat* homog_LV[256];
 CvMat* homog_RV[256];
+CvMat* homog_VL[256];
+CvMat* homog_VR[256];
 
+void* calcVirtImage_thread(void* _tid);
 void* calcVirtDepth_thread(void* _tid);
 void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage* depth_R,
 			CvMat** H_LV, CvMat** H_RV, int width, int height)
@@ -67,8 +76,6 @@ void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage
         info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
     }
 
-    //(*depth_V)->imageData = (char*)udepth_left->imageData;
-    //(*depth_V2)->imageData = (char*)udepth_right->imageData;
     udepth = (uchar*)udepth_left->imageData;
     udepth2 = (uchar*)udepth_right->imageData;
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
@@ -122,12 +129,9 @@ void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage
 		count);
     count++;
 #endif
-
     /******************************************************/
-
-
 }
-// compute virtual depth kernel
+// compute virtual image kernel
 void* calcVirtDepth_thread(void* _tid) {
 
     int i, j;
@@ -168,6 +172,142 @@ void* calcVirtDepth_thread(void* _tid) {
         }
     }
 
+    cvReleaseMat(&m);
+    cvReleaseMat(&mv);
+    pthread_exit((void*) _tid);
+}
+
+void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* src_R,
+                      uchar* udepth, uchar* udepth2,
+                      CvMat** H_VL, CvMat** H_VR, int width, int height)
+{
+    // This loop updates the dst and dst2 that store RGB values of virtual view
+    // It uses udepth to find H_vl and use projected location to update dst RGB value
+    // It uses udepth2 to find H_vr and use projected location to update dst2 RGB value
+    int64_t time;
+    static float total_t = 0;
+    static int count = 1;
+#ifdef PTHREAD_V1
+    time = cv::getTickCount();
+    pthread_t thread[NUM_THREADS];
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    long t;
+    void *status;
+    int rc;
+    for(t=0; t<NUM_THREADS; t++) {
+        info_print("Main: creating thread %ld\n", t);
+        rc = pthread_create(&thread[t], &attr, calcVirtImage_thread, (void *)t);
+        if (rc) {
+            error_print("return code from pthread_create() is %d\n", rc);
+            exit(-1);
+        }
+    }
+
+    /* Free attribute and wait for the other threads */
+    pthread_attr_destroy(&attr);
+    for(t=0; t<NUM_THREADS; t++) {
+        rc = pthread_join(thread[t], &status);
+        if (rc) {
+            error_print("return code from pthread_join() is %d\n", rc);
+            exit(-1);
+        }
+        info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
+    }
+
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+
+    timing_print("calcVirtImage loop2 took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+
+    count++;
+#else
+    // sequential version
+    time = cv::getTickCount();
+    for(int j = 0; j < height; j++)
+    {
+    CvMat* m = cvCreateMat(3, 1, CV_64F);
+    CvMat* mv = cvCreateMat(3, 1, CV_64F);
+        for(int i = 0; i < width; i++)
+        {
+            int ptv = i + j * width;
+            mv->data.db[0] = i;
+            mv->data.db[1] = j;
+            mv->data.db[2] = 1;
+            cvmMul(H_VL[udepth[ptv]], mv, m);
+            int u = m->data.db[0] / m->data.db[2];
+            int v = m->data.db[1] / m->data.db[2];
+            u = abs(u) % width;
+            v = abs(v) % height;
+            int pt = u + v * width;
+            for(int k = 0; k < 3; k++){
+                dst->imageData[ptv * 3 + k] = src_L->imageData[pt * 3 + k];
+            }
+            cvmMul(H_VR[udepth2[ptv]], mv, m);
+            u = m->data.db[0] / m->data.db[2];
+            v = m->data.db[1] / m->data.db[2];
+            u = abs(u) % width;
+            v = abs(v) % height;
+            pt = u + v * width;
+            for(int k = 0; k < 3; k++){
+                dst2->imageData[ptv * 3 + k] = src_R->imageData[pt * 3 + k];
+            }
+        }
+    cvReleaseMat(&m);
+    cvReleaseMat(&mv);
+    }
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+    timing_print("UImage loop2 took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+    count++;
+#endif
+    /******************************************************/
+}
+// compute virtual depth kernel
+void* calcVirtImage_thread(void* _tid) {
+
+    long tid = (long)_tid;
+    info_print("Thread %ld starting...\n", tid);
+
+    int local_h = (int)ceil(IMG_HEIGHT/NUM_THREADS + 1); // row block dim
+    int start_row = local_h * tid;                   // start row given tid
+    int end_row = std::min(IMG_HEIGHT, (int)(tid+1)*local_h);      // end row given tid (boundary checked if end_row > height)
+
+    uchar* udepth = (uchar*)udepth_left->imageData;
+    uchar* udepth2 = (uchar*)udepth_right->imageData;
+    CvMat* m = cvCreateMat(3, 1, CV_64F);
+    CvMat* mv = cvCreateMat(3, 1, CV_64F);
+    for(int j = start_row; j < end_row; j++) {
+        for(int i = 0; i < IMG_WIDTH; i++) {
+
+            int ptv = i + j * IMG_WIDTH;
+            mv->data.db[0] = i;
+            mv->data.db[1] = j;
+            mv->data.db[2] = 1;
+            cvmMul(homog_VL[udepth[ptv]], mv, m);
+            int u = m->data.db[0] / m->data.db[2];
+            int v = m->data.db[1] / m->data.db[2];
+            u = abs(u) % IMG_WIDTH;
+            v = abs(v) % IMG_HEIGHT;
+            int pt = u + v * IMG_WIDTH;
+            for(int k = 0; k < 3; k++)
+                dst_left_g->imageData[ptv * 3 + k] = src_left_g->imageData[pt * 3 + k];
+
+            cvmMul(homog_VR[udepth2[ptv]], mv, m);
+            u = m->data.db[0] / m->data.db[2];
+            v = m->data.db[1] / m->data.db[2];
+            u = abs(u) % IMG_WIDTH;
+            v = abs(v) % IMG_HEIGHT;
+            pt = u + v * IMG_WIDTH;
+            for(int k = 0; k < 3; k++)
+                dst_right_g->imageData[ptv * 3 + k] = src_right_g->imageData[pt * 3 + k];
+        }
+    }
     cvReleaseMat(&m);
     cvReleaseMat(&mv);
     pthread_exit((void*) _tid);
@@ -405,9 +545,17 @@ void init_synthesis(int width, int height) {
     depth_right= cvCreateImage(cvSize(width, height), 8, 1);
     udepth_left = cvCreateImage(cvSize(width, height), 8, 1);
     udepth_right= cvCreateImage(cvSize(width, height), 8, 1);
+
+    src_left_g = cvCreateImage(cvSize(width, height), 8, 3);
+    src_right_g = cvCreateImage(cvSize(width, height), 8, 3);
+    dst_left_g = cvCreateImage(cvSize(width, height), 8, 3);
+    dst_right_g = cvCreateImage(cvSize(width, height), 8, 3);
+
     for(int i = 0; i < 256; i++) {
         homog_LV[i] = cvCreateMat(3, 3, CV_64F);
         homog_RV[i] = cvCreateMat(3, 3, CV_64F);
+        homog_VL[i] = cvCreateMat(3, 3, CV_64F);
+        homog_VR[i] = cvCreateMat(3, 3, CV_64F);
     }
 
     // initialize with 0
@@ -427,8 +575,11 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     int width = src_L->width;
     int height = src_R->height;
     init_synthesis(width, height);
+
     depth_left = cvCloneImage(depth_L);
     depth_right = cvCloneImage(depth_R);
+    src_left_g = cvCloneImage(src_L);
+    src_right_g = cvCloneImage(src_R);
 
     IplImage* dst = cvCreateImage(cvSize(width, height), 8, 3);
     IplImage* dst2 = cvCreateImage(cvSize(width, height), 8, 3);
@@ -639,6 +790,8 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     for (int i = 0; i < 256; i++) {
         homog_LV[i] = cvCloneMat(H_LV[i]);
         homog_RV[i] = cvCloneMat(H_RV[i]);
+        homog_VL[i] = cvCloneMat(H_VL[i]);
+        homog_VR[i] = cvCloneMat(H_VR[i]);
     }
 
     // udepth <-- virtual view depth computed from left view
@@ -650,6 +803,7 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
         udepth[ptv]  = 0;
         udepth2[ptv] = 0;
     }
+
 
     calcVirtualDepth(udepth, udepth2, depth_L, depth_R, H_LV, H_RV, width, height);
     int sigma_d = 20;
@@ -663,41 +817,45 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     cvexMedian(depth_V2);
     cvexBilateral(depth_V2, sigma_d, sigma_c);
 
+    calcVirtualImage(dst, dst2, src_L, src_R, udepth, udepth2, H_VL, H_VR, width, height);
+    dst = cvCloneImage(dst_left_g);
+    dst2 = cvCloneImage(dst_right_g);
+
     // This loop updates the dst and dst2 that store RGB values of virtual view
     // It uses udepth to find H_vl and use projected location to update dst RGB value
     // It uses udepth2 to find H_vr and use projected location to update dst2 RGB value
-#pragma omp parallel for
-    for(int j = 0; j < height; j++)
-    {
-        CvMat* m = cvCreateMat(3, 1, CV_64F);
-        CvMat* mv = cvCreateMat(3, 1, CV_64F);
-        for(int i = 0; i < width; i++)
-        {
-            int ptv = i + j * width;
-            mv->data.db[0] = i;
-            mv->data.db[1] = j;
-            mv->data.db[2] = 1;
-            cvmMul(H_VL[udepth[ptv]], mv, m);
-            int u = m->data.db[0] / m->data.db[2];
-            int v = m->data.db[1] / m->data.db[2];
-            u = abs(u) % width;
-            v = abs(v) % height;
-            int pt = u + v * width;
-            for(int k = 0; k < 3; k++)
-                dst->imageData[ptv * 3 + k] = src_L->imageData[pt * 3 + k];
+//#pragma omp parallel for
+    //for(int j = 0; j < height; j++)
+    //{
+        //CvMat* m = cvCreateMat(3, 1, CV_64F);
+        //CvMat* mv = cvCreateMat(3, 1, CV_64F);
+        //for(int i = 0; i < width; i++)
+        //{
+            //int ptv = i + j * width;
+            //mv->data.db[0] = i;
+            //mv->data.db[1] = j;
+            //mv->data.db[2] = 1;
+            //cvmMul(H_VL[udepth[ptv]], mv, m);
+            //int u = m->data.db[0] / m->data.db[2];
+            //int v = m->data.db[1] / m->data.db[2];
+            //u = abs(u) % width;
+            //v = abs(v) % height;
+            //int pt = u + v * width;
+            //for(int k = 0; k < 3; k++)
+                //dst->imageData[ptv * 3 + k] = src_L->imageData[pt * 3 + k];
 
-            cvmMul(H_VR[udepth2[ptv]], mv, m);
-            u = m->data.db[0] / m->data.db[2];
-            v = m->data.db[1] / m->data.db[2];
-            u = abs(u) % width;
-            v = abs(v) % height;
-            pt = u + v * width;
-            for(int k = 0; k < 3; k++)
-                dst2->imageData[ptv * 3 + k] = src_R->imageData[pt * 3 + k];
-        }
-        cvReleaseMat(&m);
-        cvReleaseMat(&mv);
-    }
+            //cvmMul(H_VR[udepth2[ptv]], mv, m);
+            //u = m->data.db[0] / m->data.db[2];
+            //v = m->data.db[1] / m->data.db[2];
+            //u = abs(u) % width;
+            //v = abs(v) % height;
+            //pt = u + v * width;
+            //for(int k = 0; k < 3; k++)
+                //dst2->imageData[ptv * 3 + k] = src_R->imageData[pt * 3 + k];
+        //}
+        //cvReleaseMat(&m);
+        //cvReleaseMat(&mv);
+    //}
 
     IplImage* mask = cvCreateImage(cvSize(width, height), 8, 1);
     IplImage* mask2 = cvCreateImage(cvSize(width, height), 8, 1);
