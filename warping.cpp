@@ -32,7 +32,7 @@ CvMat* homog_VR[256];
 
 void* calcVirtImage_thread(void* _tid);
 void* calcVirtDepth_thread(void* _tid);
-void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage* depth_R,
+void calcVirtualDepth(IplImage** depth_V, IplImage** depth_V2, IplImage* depth_L, IplImage* depth_R,
 			CvMat** H_LV, CvMat** H_RV, int width, int height)
 {
     /*****  udepth loop 1 *****/
@@ -76,8 +76,10 @@ void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage
         info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
     }
 
-    udepth = (uchar*)udepth_left->imageData;
-    udepth2 = (uchar*)udepth_right->imageData;
+    //udepth = (uchar*)udepth_left->imageData;
+    //udepth2 = (uchar*)udepth_right->imageData;
+    *depth_V = cvCloneImage(udepth_left);
+    *depth_V2 = cvCloneImage(udepth_right);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
     timing_print("Udepth loop1 took %f msec, ave %f over %d frames\n",
@@ -108,7 +110,7 @@ void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage
             u = abs(u) % width; // boundary check
             v = abs(v) % height;
             int ptv = u + v * width;
-            udepth[ptv] = (udepth[ptv] > val) ? udepth[ptv] : val;
+            (*depth_V)->imageData[ptv] = ((*depth_V)->imageData[ptv] > val) ? (*depth_V)->imageData[ptv] : val;
 
             val = (uchar)depth_R->imageData[pt];
             cvmMul(H_RV[val], m, mv);
@@ -117,7 +119,7 @@ void calcVirtualDepth(uchar* udepth, uchar* udepth2, IplImage* depth_L, IplImage
             u = abs(u) % width;
             v = abs(v) % height;
             ptv = u + v * width;
-            udepth2[ptv] = (udepth2[ptv] > val) ? udepth2[ptv] : val;
+            (*depth_V2)->imageData[ptv] = ((*depth_V2)->imageData[ptv] > val) ? (*depth_V2)->imageData[ptv] : val;
         }
         cvReleaseMat(&m);
         cvReleaseMat(&mv);
@@ -177,8 +179,8 @@ void* calcVirtDepth_thread(void* _tid) {
     pthread_exit((void*) _tid);
 }
 
-void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* src_R,
-                      uchar* udepth, uchar* udepth2,
+void calcVirtualImage(IplImage** dst, IplImage** dst2, IplImage* src_L, IplImage* src_R,
+                      IplImage* depth_V, IplImage* depth_V2,
                       CvMat** H_VL, CvMat** H_VR, int width, int height)
 {
     // This loop updates the dst and dst2 that store RGB values of virtual view
@@ -216,6 +218,8 @@ void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* 
         info_print("Main: completed join with thread %ld having a status of %ld\n", t, (long)status);
     }
 
+    (*dst) = cvCloneImage(dst_left_g);
+    (*dst2) = cvCloneImage(dst_right_g);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
     timing_print("calcVirtImage loop2 took %f msec, ave %f over %d frames\n",
@@ -227,6 +231,8 @@ void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* 
 #else
     // sequential version
     time = cv::getTickCount();
+    uchar* udepth = (uchar*)depth_V->imageData;
+    uchar* udepth2 = (uchar*)depth_V2->imageData;
     for(int j = 0; j < height; j++)
     {
     CvMat* m = cvCreateMat(3, 1, CV_64F);
@@ -244,7 +250,7 @@ void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* 
             v = abs(v) % height;
             int pt = u + v * width;
             for(int k = 0; k < 3; k++){
-                dst->imageData[ptv * 3 + k] = src_L->imageData[pt * 3 + k];
+                (*dst)->imageData[ptv * 3 + k] = src_L->imageData[pt * 3 + k];
             }
             cvmMul(H_VR[udepth2[ptv]], mv, m);
             u = m->data.db[0] / m->data.db[2];
@@ -253,7 +259,7 @@ void calcVirtualImage(IplImage* dst, IplImage* dst2, IplImage* src_L, IplImage* 
             v = abs(v) % height;
             pt = u + v * width;
             for(int k = 0; k < 3; k++){
-                dst2->imageData[ptv * 3 + k] = src_R->imageData[pt * 3 + k];
+                (*dst2)->imageData[ptv * 3 + k] = src_R->imageData[pt * 3 + k];
             }
         }
     cvReleaseMat(&m);
@@ -805,7 +811,7 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     }
 
 
-    calcVirtualDepth(udepth, udepth2, depth_L, depth_R, H_LV, H_RV, width, height);
+    calcVirtualDepth(&depth_V, &depth_V2, depth_L, depth_R, H_LV, H_RV, width, height);
     int sigma_d = 20;
     int sigma_c = 50;
 
@@ -817,9 +823,10 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     cvexMedian(depth_V2);
     cvexBilateral(depth_V2, sigma_d, sigma_c);
 
-    calcVirtualImage(dst, dst2, src_L, src_R, udepth, udepth2, H_VL, H_VR, width, height);
-    dst = cvCloneImage(dst_left_g);
-    dst2 = cvCloneImage(dst_right_g);
+    
+    udepth_left = cvCloneImage(depth_V);
+    udepth_right= cvCloneImage(depth_V2);
+    calcVirtualImage(&dst, &dst2, src_L, src_R, depth_V, depth_V2, H_VL, H_VR, width, height);
 
     // This loop updates the dst and dst2 that store RGB values of virtual view
     // It uses udepth to find H_vl and use projected location to update dst RGB value
