@@ -32,6 +32,11 @@ IplImage* src_right_g;
 IplImage* dst_left_g;
 IplImage* dst_right_g;
 
+__thread char* dst_left_local;
+__thread char* dst_right_local;
+__thread char* depth_left_local;
+__thread char* depth_right_local;
+
 CvMat* homog_LV[256];
 CvMat* homog_RV[256];
 CvMat* homog_VL[256];
@@ -334,22 +339,44 @@ void* calcVirtDepthAndImage_thread(void* _tid)
     long tid = (long)_tid;
     info_print("Thread %ld starting...\n", tid);
 
-    int local_h = (int)ceil(IMG_HEIGHT/NUM_THREADS + 1); // row block dim
-    int start_row = local_h * tid;                   // start row given tid
+    int local_h = (int)ceil(IMG_HEIGHT/NUM_THREADS + 1);           // row block dim
+    int start_row = local_h * tid;                                 // start row given tid
     int end_row = std::min(IMG_HEIGHT, (int)(tid+1)*local_h);      // end row given tid (boundary checked if end_row > height)
 
+    char* data = NULL;
+
     // Calculating Depth
+#ifdef USE_LOCAL
+    dst_left_local = (char*)malloc((end_row-start_row)*3*IMG_WIDTH*sizeof(char));
+    dst_right_local = (char*)malloc((end_row-start_row)*3*IMG_WIDTH*sizeof(char));
+    depth_left_local = (char*)malloc((end_row-start_row)*IMG_WIDTH*sizeof(char));
+    depth_right_local = (char*)malloc((end_row-start_row)*IMG_WIDTH*sizeof(char));
+    data = depth_left->imageData + start_row*IMG_WIDTH;
+    memcpy(depth_left_local, data, (end_row-start_row)*IMG_WIDTH*sizeof(char));
+    data = depth_right->imageData + start_row*IMG_WIDTH;
+    memcpy(depth_right_local, data, (end_row-start_row)*IMG_WIDTH*sizeof(char));
+    uchar* depth_left_l = (uchar*)depth_left_local;
+    uchar* depth_right_l = (uchar*)depth_right_local;
+    uchar* dst_left_l = (uchar*)dst_left_local;
+    uchar* dst_right_l = (uchar*)dst_right_local;
+#else
+    uchar* depth_left_l = (uchar*)depth_left->imageData  + start_row*IMG_WIDTH;
+    uchar* depth_right_l = (uchar*)depth_right->imageData + start_row*IMG_WIDTH;
+    uchar* dst_left_l = (uchar*)dst_left_g->imageData + start_row*IMG_WIDTH*3;
+    uchar* dst_right_l = (uchar*)dst_right_g->imageData  + start_row*IMG_WIDTH*3;
+#endif
     uchar* udepth = (uchar*)udepth_left->imageData;
     uchar* udepth2 = (uchar*)udepth_right->imageData;
+
     CvMat* m = cvCreateMat(3, 1, CV_64F);
     CvMat* mv = cvCreateMat(3, 1, CV_64F);
     for(j = start_row; j < end_row; j++) {
         for(int i = 0; i < IMG_WIDTH; i++) {
-            int pt = i + j * IMG_WIDTH;
+            int pt = i + (j-start_row) * IMG_WIDTH;
             cvmSet(m, 0, 0, i);
             cvmSet(m, 1, 0, j);
             cvmSet(m, 2, 0, 1);
-            uchar val = (uchar)depth_left->imageData[pt];
+            uchar val = (uchar)depth_left_l[pt];
             cvmMul(homog_LV[val], m, mv);
             int u = mv->data.db[0] / mv->data.db[2];
             int v = mv->data.db[1] / mv->data.db[2];
@@ -358,7 +385,7 @@ void* calcVirtDepthAndImage_thread(void* _tid)
             int ptv = u + v * IMG_WIDTH;
             udepth[ptv] = (udepth[ptv] > val) ? udepth[ptv] : val;
 
-            val = (uchar)depth_right->imageData[pt];
+            val = (uchar)depth_right_l[pt];
             cvmMul(homog_RV[val], m, mv);
             u = mv->data.db[0] / mv->data.db[2];
             v = mv->data.db[1] / mv->data.db[2];
@@ -397,7 +424,7 @@ void* calcVirtDepthAndImage_thread(void* _tid)
             v = abs(v) % IMG_HEIGHT;
             int pt = u + v * IMG_WIDTH;
             for(int k = 0; k < 3; k++)
-                dst_left_g->imageData[ptv * 3 + k] = src_left_g->imageData[pt * 3 + k];
+                dst_left_l[(ptv-(start_row*IMG_WIDTH)) * 3 + k] = src_left_g->imageData[pt * 3 + k];
 
             cvmMul(homog_VR[udepth2[ptv]], mv, m);
             u = m->data.db[0] / m->data.db[2];
@@ -406,10 +433,21 @@ void* calcVirtDepthAndImage_thread(void* _tid)
             v = abs(v) % IMG_HEIGHT;
             pt = u + v * IMG_WIDTH;
             for(int k = 0; k < 3; k++)
-                dst_right_g->imageData[ptv * 3 + k] = src_right_g->imageData[pt * 3 + k];
+                dst_right_l[(ptv-(start_row*IMG_WIDTH)) * 3 + k] = src_right_g->imageData[pt * 3 + k];
         }
     }
 
+#ifdef USE_LOCAL
+    data = dst_left_g->imageData + start_row*IMG_WIDTH * 3;
+    memcpy(data, dst_left_local, (end_row-start_row)*IMG_WIDTH*3);
+    data = dst_right_g->imageData + start_row*IMG_WIDTH * 3;
+    memcpy(data, dst_right_local, (end_row-start_row)*IMG_WIDTH*3);
+
+    free(depth_left_local);
+    free(depth_right_local);
+    free(dst_left_local);
+    free(dst_right_local);
+#endif
     cvReleaseMat(&m);
     cvReleaseMat(&mv);
     pthread_exit((void*) _tid);
@@ -452,7 +490,7 @@ void calcVirtualDepthAndImage(IplImage** dst, IplImage** dst2)
     (*dst2) = cvCloneImage(dst_right_g);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
-    timing_print("calcVirtImage loop2 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtDepthAndImage loop2 took %f msec, ave %f over %d frames\n",
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
 		total_t/count,
 		count);
