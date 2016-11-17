@@ -47,6 +47,28 @@ pthread_mutex_t mutex_right;
 
 void* calcVirtImage_thread(void* _tid);
 void* calcVirtDepth_thread(void* _tid);
+void applyFilter(IplImage** in_out1, IplImage** in_out2)
+{
+
+    int64_t time;
+    static float total_t = 0;
+    static int count = 1;
+
+    time = cv::getTickCount();
+
+    cvexMedian(*in_out1);
+    cvexBilateral(*in_out1, 20, 50);
+    cvexMedian(*in_out2);
+    cvexBilateral(*in_out2, 20, 50);
+
+    total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
+    timing_print("apply filter took %f msec, ave %f over %d frames\n",
+                (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
+		total_t/count,
+		count);
+    count++;
+}
+
 void calcVirtualDepth(IplImage** depth_V, IplImage** depth_V2, IplImage* depth_L, IplImage* depth_R,
                       CvMat** H_LV, CvMat** H_RV, int width, int height)
 {
@@ -979,7 +1001,11 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     int64_t time2 = cv::getTickCount();
     static float total_t2 = 0;
 
-#ifdef PTHREAD_V1
+#ifdef PTHREAD_V2
+    calcVirtualDepthAndImage(&dst, &dst2);
+    depth_V = cvCloneImage(udepth_left);
+    depth_V2 = cvCloneImage(udepth_right);
+#else
     calcVirtualDepth(&depth_V, &depth_V2, depth_L, depth_R, H_LV, H_RV, width, height);
     int sigma_d = 20;
     int sigma_c = 50;
@@ -987,19 +1013,10 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     //TODO:
     // Remove Mediand and Bilat filters and check if the result is identical to when
     // it is given left and right images as is.
-    cvexMedian(depth_V);
-    cvexBilateral(depth_V, sigma_d, sigma_c);
-    cvexMedian(depth_V2);
-    cvexBilateral(depth_V2, sigma_d, sigma_c);
-
+    applyFilter(&depth_V, &depth_V2);
     udepth_left = cvCloneImage(depth_V);
     udepth_right= cvCloneImage(depth_V2);
     calcVirtualImage(&dst, &dst2, src_L, src_R, depth_V, depth_V2, H_VL, H_VR, width, height);
-#endif
-#ifdef PTHREAD_V2
-    calcVirtualDepthAndImage(&dst, &dst2);
-    depth_V = cvCloneImage(udepth_left);
-    depth_V2 = cvCloneImage(udepth_right);
 #endif
 
     total_t2 += (float)(cv::getTickCount() - time2)/cv::getTickFrequency() *1000.0;

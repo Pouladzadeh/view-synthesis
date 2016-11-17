@@ -11,8 +11,8 @@
 #endif
 
 #ifndef LOGLEVEL
-#define LOGLEVEL (ZONE_ERROR | ZONE_WARNING | ZONE_INFO | ZONE_TIME)
-//#define LOGLEVEL (ZONE_ERROR | ZONE_TIME)
+//#define LOGLEVEL (ZONE_ERROR | ZONE_WARNING | ZONE_INFO | ZONE_TIME)
+#define LOGLEVEL (ZONE_ERROR | ZONE_TIME)
 #endif
 
 /* logs are also saved to a file if specified */
