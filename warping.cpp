@@ -182,36 +182,35 @@ void* calcVirtDepth_thread(void* _tid) {
 
     uchar* udepth = (uchar*)udepth_left->imageData;
     uchar* udepth2 = (uchar*)udepth_right->imageData;
-    CvMat* m = cvCreateMat(3, 1, CV_64F);
-    CvMat* mv = cvCreateMat(3, 1, CV_64F);
-    for(j = start_row; j < end_row; j++) {
-        for(int i = 0; i < IMG_WIDTH; i++) {
-            int pt = i + j * IMG_WIDTH;
-            cvmSet(m, 0, 0, i);
-            cvmSet(m, 1, 0, j);
-            cvmSet(m, 2, 0, 1);
+    for(j = start_row; j < end_row; ++j) {
+	int y_idx = j * IMG_WIDTH;
+        for(int i = 0; i < IMG_WIDTH; ++i) {
+            int pt = y_idx + i; 
             uchar val = (uchar)depth_left->imageData[pt];
-            cvmMul(homog_LV[val], m, mv);
-            int u = mv->data.db[0] / mv->data.db[2];
-            int v = mv->data.db[1] / mv->data.db[2];
+	    double* H = (double*)(homog_LV[val]->data.fl);
+	    float x = i*H[0] + j*H[1] + H[2];
+	    float y = i*H[3] + j*H[4] + H[5];
+	    float z = i*H[6] + j*H[7] + H[8];
+	    int u = x/z;
+   	    int v = y/z;
             u = abs(u) % IMG_WIDTH; // boundary check
             v = abs(v) % IMG_HEIGHT;
             int ptv = u + v * IMG_WIDTH;
             udepth[ptv] = (udepth[ptv] > val) ? udepth[ptv] : val;
 
             val = (uchar)depth_right->imageData[pt];
-            cvmMul(homog_RV[val], m, mv);
-            u = mv->data.db[0] / mv->data.db[2];
-            v = mv->data.db[1] / mv->data.db[2];
+	    H = (double*)(homog_RV[val]->data.fl);
+	    x = i*H[0] + j*H[1] + H[2];
+	    y = i*H[3] + j*H[4] + H[5];
+	    z = i*H[6] + j*H[7] + H[8];
+	    u = x/z;
+   	    v = y/z;
             u = abs(u) % IMG_WIDTH;
             v = abs(v) % IMG_HEIGHT;
             ptv = u + v * IMG_WIDTH;
             udepth2[ptv] = (udepth2[ptv] > val) ? udepth2[ptv] : val;
         }
     }
-
-    cvReleaseMat(&m);
-    cvReleaseMat(&mv);
     pthread_exit((void*) _tid);
 }
 
