@@ -27,7 +27,7 @@ void cvexSetRotMatrix(CvMat* rot,double pitch, double roll, double yaw);
 void erodebound(IplImage* bound, int flag);
 void cvexSetCameraParam(char* filename, CvMat* inMat1, CvMat* exMat1, CvMat* inMat2, CvMat* exMat2, CvMat* inMat3, CvMat* exMat3, char* cam_posi1, char* cam_posi2, char* cam_posi3);
 IplImage* cvexLoadImage(char* filename, int iscolor = 1);
-void cvexMedian(IplImage* dst);
+void cvexMedian(IplImage* src);
 void cvexBilateral(IplImage* dst, int sigma_d, int sigma_c);
 void cvexConvertCameraParam(CvMat* inMat, CvMat* exMat, int height);
 IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, IplImage* depth_R, CvMat* inMat_L, CvMat* exMat_L, CvMat* inMat_R, CvMat* exMat_R, CvMat* inMat_V, CvMat* exMat_V, CvMat* inMat_L_cpy, CvMat* exMat_L_cpy, CvMat* inMat_R_cpy, CvMat* exMat_R_cpy, CvMat* inMat_V_cpy, CvMat* exMat_V_cpy, float Z_near_L, float Z_far_L, float Z_near_R, float Z_far_R, int flag);

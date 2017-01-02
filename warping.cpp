@@ -121,7 +121,7 @@ void calcVirtualDepth(IplImage** depth_V, IplImage** depth_V2, IplImage* depth_L
     *depth_V2 = cvCloneImage(udepth_right);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
-    timing_print("Udepth loop1 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtualDepth took %f msec, ave %f over %d frames\n",
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
 		total_t/count,
 		count);
@@ -163,7 +163,7 @@ void calcVirtualDepth(IplImage** depth_V, IplImage** depth_V2, IplImage* depth_L
         }
     }
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
-    timing_print("Udepth loop1 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtualDepth took %f msec, ave %f over %d frames\n",
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
 		total_t/count,
 		count);
@@ -259,7 +259,7 @@ void calcVirtualImage(IplImage** dst, IplImage** dst2, IplImage* src_L, IplImage
     (*dst2) = cvCloneImage(dst_right_g);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
-    timing_print("calcVirtImage loop2 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtImage took %f msec, ave %f over %d frames\n",
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
 		total_t/count,
 		count);
@@ -305,7 +305,7 @@ void calcVirtualImage(IplImage** dst, IplImage** dst2, IplImage* src_L, IplImage
         }
     }
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
-    timing_print("UImage loop2 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtualImage took %f msec, ave %f over %d frames\n",
             (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
             total_t/count,
             count);
@@ -526,7 +526,7 @@ void calcVirtualDepthAndImage(IplImage** dst, IplImage** dst2)
     (*dst2) = cvCloneImage(dst_right_g);
     total_t +=(float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0;
 
-    timing_print("calcVirtDepthAndImage loop2 took %f msec, ave %f over %d frames\n",
+    timing_print("calcVirtDepthAndImage took %f msec, ave %f over %d frames\n",
                 (float)(cv::getTickCount() - time)/cv::getTickFrequency() *1000.0,
 		total_t/count,
 		count);
@@ -777,6 +777,18 @@ void init_synthesis(int width, int height) {
 
 IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, IplImage* depth_R, CvMat* inMat_L, CvMat* exMat_L, CvMat* inMat_R, CvMat* exMat_R, CvMat* inMat_V, CvMat* exMat_V, CvMat* inMat_L_cpy, CvMat* exMat_L_cpy, CvMat* inMat_R_cpy, CvMat* exMat_R_cpy, CvMat* inMat_V_cpy, CvMat* exMat_V_cpy, float Z_near_L, float Z_far_L, float Z_near_R, float Z_far_R, int flag)
 {
+
+
+#ifdef PTHREAD_V1
+    cout<<"PTHREAD_V1"<<endl;
+#elif defined(PTHREAD_V2)
+    cout<<"PTHREAD_V2"<<endl;
+#endif
+
+#ifdef NUM_THREADS
+    cout<<NUM_THREADS<<endl;
+#endif
+
     static float total_t = 0;
     static int count = 1;
     int64_t time = cv::getTickCount();
@@ -1032,12 +1044,6 @@ IplImage* viewsynthesis(IplImage* src_L, IplImage* src_R, IplImage* depth_L, Ipl
     udepth_right= cvCloneImage(depth_V2);
     calcVirtualImage(&dst, &dst2, src_L, src_R, depth_V, depth_V2, H_VL, H_VR, width, height);
 #endif
-
-    total_t2 += (float)(cv::getTickCount() - time2)/cv::getTickFrequency() *1000.0;
-    timing_print("loop1 and loop2 took %f msec, ave %f over %d frames\n",
-            (float)(cv::getTickCount() - time2)/cv::getTickFrequency() *1000.0,
-            total_t2/count,
-            count);
 
     IplImage* mask = cvCreateImage(cvSize(width, height), 8, 1);
     IplImage* mask2 = cvCreateImage(cvSize(width, height), 8, 1);
