@@ -23,7 +23,7 @@ import os.path
 import glob
 import csv
 
-data_dir    = os.getcwd() + '/data'
+data_dir    = '/home/ubuntu/VS_data/dataset_20/'
 output_dir  = os.getcwd() + '/output'
 executable  = os.getcwd() + '/build/viewSynth'
 
@@ -37,15 +37,17 @@ class Method(object):
         self.num_threads = num_threads
         self.display = display
 
-datasets = [ 'balloons',
-            'dog',
+datasets = ['balloons_20',
+            'kendo_20',
+	    'champ_20',
+	    'pant_20',
             ]
 
-methods = [ Method('sequential', 'PTHREAD_NONE',   '1',     'true'),
-            Method('scenario1-2', 'PTHREAD_V1',   '2',     'true'),
-            Method('scenario1-4', 'PTHREAD_V1',   '4',     'true'),
-            Method('scenario2-2', 'PTHREAD_V2',   '2',     'true'),
-            Method('scenario2-4', 'PTHREAD_V2',   '4',      'true'),
+methods = [ Method('sequential', 'PTHREAD_NONE',   '1',     'false'),
+            Method('scenario1-2', 'PTHREAD_V1',   '2',     'false'),
+            Method('scenario1-4', 'PTHREAD_V1',   '4',     'false'),
+            Method('scenario2-2', 'PTHREAD_V2',   '2',     'false'),
+            Method('scenario2-4', 'PTHREAD_V2',   '4',      'false'),
           ]
 
 def evaluate_method(method, setname, params, cnt):
@@ -53,7 +55,7 @@ def evaluate_method(method, setname, params, cnt):
     output = os.path.join(output_dir, setname, method.name)
     if not os.path.exists(output):
         os.makedirs(output)
-
+    print(os.path.join(output, method.name + '_call.out'))
     proc = sp.Popen(['make', 'clean'], stdout=sp.PIPE, stderr=sp.PIPE, bufsize=1)
     proc.wait()
     make = ['make', 'VER=' + method.version]
@@ -62,15 +64,17 @@ def evaluate_method(method, setname, params, cnt):
     proc = sp.Popen(make, stdout=sp.PIPE, stderr=sp.PIPE, bufsize=1)
     proc.wait()
     command =  [executable]
-    command += [os.path.join(setname, params)]
+    command += [os.path.join(data_dir, setname, params + '.cfg')]
     filename =  os.path.join(output, method.name+ '_time.txt')
     print(command)
     with open(filename,"wb") as out:
         proc = sp.Popen(command, stdout=out)
     proc.wait()
 
+    command =  [executable]
+    command += [os.path.join(data_dir, setname, params + '_call.cfg')]
     valgrind_command = ['valgrind', '--tool=callgrind', '--separate-threads=yes']
-    valgrind_command += ['--callgrind-out-file=', os.path.join(output, method.name + '_call.out')]
+    valgrind_command += ['--callgrind-out-file=' + os.path.join(output, method.name + '_call.out')]
     valgrind_command += command
     print(valgrind_command)
 
@@ -81,4 +85,9 @@ def evaluate_method(method, setname, params, cnt):
 
 if __name__=="__main__":
 
-    evaluate_method(methods[1], datasets[0], 'viewsynthesis.cfg', 1)
+    for setname in datasets:
+        for method in methods:
+            print(setname)
+            print(method.name)
+            evaluate_method(method, setname, 'viewsynthesis', 1)
+    print("Everything is done")

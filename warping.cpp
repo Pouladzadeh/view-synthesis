@@ -425,7 +425,6 @@ void* calcVirtDepthAndImage_thread(void* _tid)
             udepth2[ptv] = (udepth2[ptv] > val) ? udepth2[ptv] : val;
         }
     }
-    cout<<"sssssssssssssssssssssssss"<<endl;
     // Median and Bilateral
     IplImage* depth_V_partial = cvCreateImage(cvSize(IMG_WIDTH, local_h), 8, 1);
     IplImage* depth_V2_partial = cvCreateImage(cvSize(IMG_WIDTH, local_h), 8, 1);
